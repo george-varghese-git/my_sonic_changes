@@ -1,0 +1,196 @@
+diff --git a/configure.ac b/configure.ac
+index 73640684..9689812d 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -41,6 +41,7 @@ AC_ARG_WITH(sai,
+ [  --with-sai=vs           compiling against specific SAI],
+ [case "${withval}" in
+ 	vs)   sai=vs ;;
++	dcsg) sai=vs ;;
+ 	*) AC_MSG_ERROR(bad value ${withval} for --with-sai) ;;
+ esac])
+ AM_CONDITIONAL(SAIVS,   test x$sai = xvs)
+diff --git a/debian/control b/debian/control
+index 22dfa95e..ea34f5d0 100644
+--- a/debian/control
++++ b/debian/control
+@@ -7,19 +7,19 @@ Standards-Version: 1.0.0
+ 
+ Package: syncd
+ Architecture: any
+-Build-Profiles: <syncd !vs>
++Build-Profiles: <syncd !vs !dcsg>
+ Depends: ${misc:Pre-Depends}
+ Recommends: ${shlibs:Depends}
+-Conflicts: syncd-rpc, syncd-vs
++Conflicts: syncd-rpc, syncd-vs, syncd-dcsg
+ Description: This package contains sync daemon for SONiC project.
+   This sync daemon syncs the ASIC_DB in Redis database and the real ASIC via SAI.
+ 
+ Package: syncd-rpc
+ Architecture: any
+-Build-Profiles: <syncd rpc !vs>
++Build-Profiles: <syncd rpc !vs !dcsg>
+ Depends: ${misc:Pre-Depends}
+ Recommends: ${shlibs:Depends}
+-Conflicts: syncd, syncd-vs
++Conflicts: syncd, syncd-vs syncd-dcsg
+ Description: This package contains sync daemon with rpc for SONiC project.
+   This sync daemon syncs the ASIC_DB in Redis database and the real ASIC via SAI.
+   This daemon contains saithrift rpc library for remote control of an ASIC.
+@@ -29,7 +29,16 @@ Architecture: any
+ Build-Profiles: <syncd !rpc vs>
+ Depends: ${misc:Pre-Depends}
+ Recommends: ${shlibs:Depends}
+-Conflicts: syncd-rpc, syncd
++Conflicts: syncd-rpc, syncd, syncd-dcsg
++Description: This package contains sync daemon for SONiC project linked with virtual switch.
++  This sync daemon syncs the ASIC_DB in Redis database and the real ASIC via SAI.
++
++Package: syncd-dcsg
++Architecture: any
++Build-Profiles: <syncd !rpc dcsg>
++Depends: ${misc:Pre-Depends}
++Recommends: ${shlibs:Depends}
++Conflicts: syncd-rpc, syncd, syncd-vs
+ Description: This package contains sync daemon for SONiC project linked with virtual switch.
+   This sync daemon syncs the ASIC_DB in Redis database and the real ASIC via SAI.
+ 
+@@ -57,6 +66,17 @@ Depends: libsaivs (= ${binary:Version})
+ Section: libdevel
+ Description: This package contains development files for SAI-VirtualSwitch.
+ 
++Package: libsaidcsg
++Architecture: any
++Depends: ${shlibs:Depends}, ${misc:Pre-Depends}
++Section: libs
++Description: This package contains SAI-VirtualSwitch implementation for SONiC project.
++
++Package: libsaidcsg-dev
++Architecture: any
++Depends: libsaidcsg (= ${binary:Version})
++Section: libdevel
++
+ Package: libsaimetadata
+ Architecture: any
+ Depends: ${shlibs:Depends}, ${misc:Pre-Depends}
+diff --git a/debian/libsaidcsg-dev.dirs b/debian/libsaidcsg-dev.dirs
+new file mode 100644
+index 00000000..44188162
+--- /dev/null
++++ b/debian/libsaidcsg-dev.dirs
+@@ -0,0 +1,2 @@
++usr/lib
++usr/include
+diff --git a/debian/libsaidcsg-dev.install b/debian/libsaidcsg-dev.install
+new file mode 100644
+index 00000000..af4f2674
+--- /dev/null
++++ b/debian/libsaidcsg-dev.install
+@@ -0,0 +1,3 @@
++SAI/inc/sai*.h usr/include/sai/
++SAI/experimental/sai*.h usr/include/sai/
++vslib/saivs.h
+diff --git a/debian/libsaidcsg-dev.links b/debian/libsaidcsg-dev.links
+new file mode 100755
+index 00000000..755dc283
+--- /dev/null
++++ b/debian/libsaidcsg-dev.links
+@@ -0,0 +1,2 @@
++#! /usr/bin/dh-exec
++/usr/lib/${DEB_HOST_MULTIARCH}/libsaivs.so.0 /usr/lib/${DEB_HOST_MULTIARCH}/libsaivs.so
+diff --git a/debian/libsaidcsg.dirs b/debian/libsaidcsg.dirs
+new file mode 100644
+index 00000000..68457717
+--- /dev/null
++++ b/debian/libsaidcsg.dirs
+@@ -0,0 +1 @@
++usr/lib
+diff --git a/debian/libsaidcsg.install b/debian/libsaidcsg.install
+new file mode 100644
+index 00000000..740a14b2
+--- /dev/null
++++ b/debian/libsaidcsg.install
+@@ -0,0 +1 @@
++usr/lib/*/libsaivs.so.*
+diff --git a/debian/rules b/debian/rules
+index f8df6057..7f5efef5 100755
+--- a/debian/rules
++++ b/debian/rules
+@@ -41,6 +41,12 @@ ifneq ($(filter dashsai,$(DEB_BUILD_PROFILES)),)
+ configure_opts += --with-dashsai
+ endif
+ endif
++ifneq ($(filter dcsg,$(DEB_BUILD_PROFILES)),)
++configure_opts += --with-sai=vs
++ifneq ($(filter dashsai,$(DEB_BUILD_PROFILES)),)
++configure_opts += --with-dashsai
++endif
++endif
+ else
+ configure_opts += --disable-syncd
+ endif
+diff --git a/debian/syncd-dcsg.dirs b/debian/syncd-dcsg.dirs
+new file mode 100644
+index 00000000..527b78f2
+--- /dev/null
++++ b/debian/syncd-dcsg.dirs
+@@ -0,0 +1,2 @@
++usr/bin
++usr/lib
+diff --git a/debian/syncd-dcsg.init b/debian/syncd-dcsg.init
+new file mode 100644
+index 00000000..015aabe4
+--- /dev/null
++++ b/debian/syncd-dcsg.init
+@@ -0,0 +1,36 @@
++#!/bin/bash
++
++### BEGIN INIT INFO
++# Provides:          syncd
++# Required-Start:
++# Required-Stop:
++# Default-Start:     S
++# Default-Stop:      0 6
++# Short-Description: SONiC sync daemon
++# Description:       Enable service syncd.
++### END INIT INFO
++
++# Source the file that holds common code for systemd and supervisord
++. /usr/bin/syncd_init_common.sh
++
++# When starting as a service, we want our process to run as a daemon, in the background
++if [ $CMD == $CMD_DSSERVE ]; then
++    CMD_ARGS="-d $CMD_ARGS"
++fi
++
++case "$1" in
++start)
++    config_syncd
++    start-stop-daemon --start --quiet --exec $CMD -- $CMD_ARGS
++    ;;
++stop)
++    start-stop-daemon --stop --quiet --exec $CMD
++    ;;
++*)
++    echo "Usage: service syncd {start|stop}"
++    exit 1
++    ;;
++esac
++
++exit 0
++
+diff --git a/debian/syncd-dcsg.install b/debian/syncd-dcsg.install
+new file mode 100644
+index 00000000..c559f1fe
+--- /dev/null
++++ b/debian/syncd-dcsg.install
+@@ -0,0 +1,8 @@
++usr/bin/saidump
++usr/bin/saiplayer
++usr/bin/saisdkdump
++usr/bin/saidiscovery
++usr/bin/saiasiccmp
++usr/bin/syncd*
++syncd/scripts/* usr/bin
++usr/lib/*/libMdioIpcClient.so.*
